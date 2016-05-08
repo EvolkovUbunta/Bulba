@@ -1,0 +1,166 @@
+#include <cmath>
+#include <string>
+#define sp1 80
+#define sp2 70
+#define sp3 50
+#define fl1 0.13
+#define fl2 0.11
+#define fl3 0.09
+#define tank 70
+
+class coord
+{
+    float x,y;
+  public:
+    void set_coord(const coord &a) { x=a.get_x(); y=a.get_y(); }
+    void set_coord(float a, float b) { x=a; y=b; }
+    float get_x() { return x; }
+    float get_y() { return y; }
+    float def_dis(const coord &a);
+}
+
+class call //класс- поступающий звонок
+{
+    coord cloc; //местоположение больного
+    int ctype; //кому нужна помощь (1-взрослому человеку, 2-ребенку, 3-пожилому человеку)
+    int cserv; //какая необходима помощь (1-оказать первую помощь, 2-довести до больницы)
+  public:
+    coord get_cloc() { return cloc; }
+    int get_ctype() { return ctype; }
+    int get_cserv() { return cserv; }
+    call();
+}
+
+class car // класс-машина
+{
+    time_t time1; // время начала движения
+    time_t time2; //время промежуточной точки
+    time_t time; // время, на которое машина занята
+    int type;   // тип машины (1-для взрослого человека, 2-для ребенка, 3-для пожилых людей)
+    string num;    // номер машины (ее ведь надо как-то идентифицировать)
+    float sp; // скорость машины
+    float fl; // топливо на км
+  public:
+    coord loс1; // точка начала последнего движения
+    coord loc2; // промежуточная точка (если первая помощь-середина пути до больного, если довести до больницы-местоположение больного)
+    coord loc3; // конечная точка (если первая помощь-местоположение больного, если довести до больницы-местоположение больницы)
+    coord loc_prim; // положение машины по умолчанию
+    coord get_loc_cur(); //возвращает текущие координаты машины, использовать только если машина свободна!
+    void move(const call &a, const control &ctrl); /*эта функция двигает машину в указанную точку,  добавляет время на дорогу и оказываемую услугу (1-оказать первую помощь, 2-довести до больницы). 
+    Если нужно оказать первую помощь, то добавляется время на дорогу и на оказание первой помощи (в среднем 20 минут), loc_st меняются на координаты последнего больного. 
+    Если больного нужно довести до больницы, то время добавляется на дорогу до больного и дорогу от больного до больницы, соответственно, loc_st машины меняются на местоположение больницы. */
+    time_t get_time() { return time; }
+    int get_type() { return type; }
+    int get_num() { return num; }
+    float get_sp() { return sp; }
+    float get_fl() { return fl; }
+    car();
+}
+
+class control
+{
+  public:
+    coord *bbeg;
+    coord *bend;
+    car *cbeg;
+    car *cend;
+    control();
+}
+
+float coord::def_dis(const coord &a) //определение расстояния для стационарной точки
+{
+  float k=a.get_x();
+  float m=a.get_y();
+  float p=pow(pow(k-x,2)+pow(m-y,2),0.5);
+  return p;
+}
+
+coord car::get_loc_cur()
+{
+	coord back;
+	time_t t=time(NULL);
+	if (t>time1 && t<time2)
+	{
+		dis=pow(pow(loc2.get_x()-loc1.get_x(),2)+pow(loc2.get_y()-loc1.get_y(),2),0.5);
+		dis1=(t-time1)*sp/3600;
+		if (dis1>=dis) back.set_coord(loc2);
+		else
+		{
+			float k=(dis1/dis)*loc2.get_x()+loc1.get_x()*(1-dis1/dis);
+			float m=(dis1/dis)*loc2.get_y()+loc1.get_y()*(1-dis1/dis);
+			back.set_coord(k,m);
+		}
+	}
+	else
+	{
+		if (t>time2 && t<time)
+		{
+			dis=pow(pow(loc3.get_x()-loc2.get_x(),2)+pow(loc3.get_y()-loc2.get_y(),2),0.5);
+			dis1=(t-time2)*sp/3600;
+			float k=(dis1/dis)*loc3.get_x()+loc2.get_x()*(1-dis1/dis);
+			float m=(dis1/dis)*loc3.get_y()+loc2.get_y()*(1-dis1/dis);
+			back.set_coord(k,m);
+		}
+		else
+		{
+			dis=pow(pow(loc_prim.get_x()-loc3.get_x(),2)+pow(loc_prim.get_y()-loc3.get_y(),2),0.5);
+			dis1=(t-time)*sp/3600;
+			if (dis1>dis) back.set_coord(loc_prim);
+			else
+			{
+				float k=(dis1/dis)*loc_prim.get_x()+loc3.get_x()*(1-dis1/dis);
+				float m=(dis1/dis)*loc_prim.get_y()+loc3.get_y()*(1-dis1/dis);
+				back.set_coord(k,m);
+			}
+		}
+	}
+	return back;
+}
+
+//функция move должна устанавливать 3 значения, если это первая помощь, то 1 значение: время и точка начала движения, 2 значение:
+время и точка середины пути, 3 значение: точка конца пути и время занятости машины. Если нужно довести до больницы:
+1 значение: точка и время начала пути, 2 значение: точка нахождения пациента и время, когда машина от него стартует,
+3 значение: точка конца пути и время занятости машины. При этом местонахождение машины по умолчанию не меняется.
+
+void car::move(const call &a, const control &ctrl)
+{
+	if (a.get_cserv()==1) // если оказать первую помощь
+  	{
+    		coord tab=get_loc_cur();
+		coord bet=a.get_cloc();
+    		float dis=tab.def_dis(bet);
+		float k=(tab.get_x()+bet.get_x())/2;
+		float m=(tab.get_y()+bet.get_y())/2;
+    		loc1.set_coord(tab);
+		loc2.set_coord(k,m);
+		loc3.set_coord(bet);
+		time1=time(NULL);
+		time2=time1+dis/sp/2*3600;
+		time=time1+dis/sp*3600+1200;
+		
+  	}
+	if (a.get_cserv()==2) // если довести до больницы
+	{
+		coord tab=get_loc_cur();
+		coord bet=a.get_cloc();
+		float dis=tab.def_dis(bet);
+		loc1.set_coord(tab);
+		loc2.set_coord(bet);
+		time1=time(NULL);
+		time2=time1+dis/sp*3600+300;
+		dis1=bet.def_dis((&ctrl)->bbeg);
+		loc3.set_coord((&ctrl)->bbeg);
+		coord *rex=(&ctrl)->bbeg->next;
+		while(rex!=NULL)
+		{
+			if (dis1>bet.def_dis(*rex);
+			{
+				dis1=bet.def_dis(*rex);
+				loc3.set_coord(*rex);
+			}
+			rex=rex->next;
+		}
+		time=time2+dis1/sp*3600;
+	}
+	return;
+}
